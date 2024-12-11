@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YOLOv8 Object Detection</title>
+    <title>YOLOv8 Object Detection with Logs</title>
     <style>
         #webcam-container {
             display: flex;
@@ -14,6 +14,16 @@
         #webcam {
             border: 2px solid black;
         }
+        #log {
+            margin-top: 20px;
+            padding: 10px;
+            width: 640px;
+            height: 150px;
+            border: 2px solid #000;
+            overflow-y: scroll;
+            background-color: #f0f0f0;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -21,21 +31,19 @@
     <div id="webcam-container">
         <video id="webcam" width="640" height="480" autoplay></video>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@latest/dist/onnxruntime-web.min.js"></script>
+    <div id="log"></div> <!-- 로그를 표시할 영역 추가 -->
+    <script src="ort.min.js"></script> <!-- 로컬 ort.min.js 파일을 로드 -->
     <script>
-        // ONNX model path
-        const modelPath = 'yolov8_model.onnx'; // Make sure this path is correct
-
-        // Global variables for sound and state
-        let alertSound = new Audio('alert_sound.mp3'); // Replace with actual sound file path
+        // 전역 변수: 소리, 상태
+        let alertSound = new Audio('alert_sound.mp3'); // 알림 소리 파일 경로 수정
         let isPlaying = false;
 
-        // Initialize webcam
+        // 웹캠 초기화
         const video = document.getElementById('webcam');
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Access webcam
+        // 웹캠 권한 요청 및 설정
         navigator.mediaDevices.getUserMedia({ video: true })
             .then((stream) => {
                 video.srcObject = stream;
@@ -45,22 +53,30 @@
                 console.error('Error accessing webcam:', error);
             });
 
-        // Load ONNX model
+        // onnxruntime-web 로딩 후 모델을 로드
         let session;
+        window.onload = function () {
+            if (typeof ort !== 'undefined') {
+                loadModel();  // onnxruntime-web 라이브러리가 로드된 후 모델 로드
+            } else {
+                console.error("onnxruntime-web is not loaded properly");
+                logMessage("onnxruntime-web is not loaded properly");
+            }
+        };
 
         async function loadModel() {
             try {
-                session = await ort.InferenceSession.create(modelPath);
+                session = await ort.InferenceSession.create('yolov8_model.onnx'); // 모델 경로 수정 필요
                 console.log("Model loaded successfully");
+                logMessage("Model loaded successfully");
                 startDetection();
             } catch (err) {
                 console.error("Error loading model:", err);
+                logMessage("Error loading model: " + err);
             }
         }
 
-        loadModel();
-
-        // Start object detection
+        // 객체 탐지 시작
         async function startDetection() {
             canvas.width = video.width;
             canvas.height = video.height;
@@ -69,57 +85,60 @@
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 let frame = canvas.toDataURL('image/jpeg');
 
-                // Convert image data to tensor
+                // 이미지 데이터를 텐서로 변환
                 let tensor = preprocessImage(frame);
 
-                // Run inference
+                // 추론 실행
                 session.run([tensor]).then((output) => {
-                    const boxes = output[0].data;  // Adjust according to output format
-                    const confidences = output[1].data;  // Adjust according to output format
+                    const boxes = output[0].data;  // 박스 데이터
+                    const confidences = output[1].data;  // 신뢰도 데이터
+                    const classIds = output[2].data;  // 클래스 ID 데이터
 
-                    // Check if cigarette is detected
+                    // 'cigarette'가 탐지된 경우
                     let cigaretteDetected = false;
 
-                    // Loop through detections and draw boxes
+                    // 탐지된 각 객체에 대해 박스를 그리기
                     boxes.forEach((box, index) => {
                         const confidence = confidences[index];
-                        if (confidence > 0.5) {  // Adjust the confidence threshold
+                        if (confidence > 0.5) {  // 신뢰도가 50% 이상인 경우
                             const [x, y, width, height] = box;
-                            if (/* check if the class is cigarette */) {
+                            if (classIds[index] === 1) {  // 클래스 ID가 1이면 'cigarette' 클래스라고 가정
                                 cigaretteDetected = true;
                                 drawBoundingBox(x, y, width, height);
                             }
                         }
                     });
 
-                    // Play alert sound if cigarette is detected
+                    // 'cigarette'가 탐지되었으면 소리 재생
                     if (cigaretteDetected && !isPlaying) {
                         alertSound.play();
                         isPlaying = true;
+                        logMessage("Cigarette detected! Playing alert sound.");
                     } else if (!cigaretteDetected && isPlaying) {
                         alertSound.pause();
                         isPlaying = false;
+                        logMessage("No cigarette detected. Stopping alert sound.");
                     }
 
                     requestAnimationFrame(detectObjects);
                 }).catch((error) => {
                     console.error("Error during inference:", error);
+                    logMessage("Error during inference: " + error);
                 });
             }
 
             detectObjects();
         }
 
-        // Preprocess webcam frame and convert to tensor
+        // 웹캠 이미지 전처리 및 텐서로 변환
         function preprocessImage(frame) {
-            // Convert frame to tensor here (resize, normalize, etc.)
-            // This depends on the expected input format for your model
-            // Example: You might need to resize the frame, normalize, etc.
-            let tensor = new ort.Tensor('float32', new Float32Array(frame), [1, 3, 640, 640]);  // Adjust the shape as per model requirement
+            // 이미지 전처리 (크기 조정, 정규화 등)
+            // 모델에 맞는 텐서 형태로 변환
+            let tensor = new ort.Tensor('float32', new Float32Array(frame), [1, 3, 640, 640]);  // 모델의 입력 형식에 맞게 수정 필요
             return tensor;
         }
 
-        // Draw bounding box on canvas
+        // 박스 그리기
         function drawBoundingBox(x, y, width, height) {
             ctx.beginPath();
             ctx.rect(x, y, width, height);
@@ -127,6 +146,15 @@
             ctx.strokeStyle = 'red';
             ctx.fillStyle = 'red';
             ctx.stroke();
+        }
+
+        // 로그 메시지 추가
+        function logMessage(message) {
+            const logElement = document.getElementById('log');
+            const newLog = document.createElement('div');
+            newLog.textContent = message;
+            logElement.appendChild(newLog);
+            logElement.scrollTop = logElement.scrollHeight;  // 로그 창이 항상 최신 메시지로 스크롤
         }
     </script>
 </body>
