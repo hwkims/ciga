@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLOv8 Object Detection</title>
+    <style>
+        /* 웹캠 영상과 탐지 결과를 화면에 맞게 표시 */
+        video {
+            width: 100%;
+            max-width: 640px;
+            display: block;
+            margin: auto;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+    <h1>YOLOv8 Object Detection with WebCam</h1>
+    
+    <!-- 웹캠 비디오 출력 -->
+    <video id="videoElement" autoplay playsinline></video>
+
+    <!-- 추론을 위한 캔버스 (객체 탐지 결과 표시용) -->
+    <canvas id="canvas"></canvas>
+
+    <!-- 알림 소리 -->
+    <audio id="alertSound" src="alert_sound.mp3" preload="auto"></audio>
+
+    <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
+    <script>
+        // 웹캠 비디오 스트림을 가져오는 함수
+        async function setupWebcam() {
+            const video = document.getElementById('videoElement');
+            const constraints = { video: { facingMode: 'user' } };
+            
+            // 웹캠 권한 요청
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            video.play();
+        }
+
+        // 모델 로드 및 추론을 위한 ONNX 세션 생성
+        const session = new onnx.InferenceSession();
+
+        // 모델 파일 경로
+        const modelPath = 'yolov8_model.onnx';  // 변환한 YOLOv8 모델 파일 경로
+
+        async function loadModel() {
+            await session.loadModel(modelPath);
+            console.log("YOLOv8 모델 로드 완료");
+        }
+
+        // 웹캠 비디오를 캔버스에 그리기
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 탐지된 객체의 클래스에 따라 박스를 그리는 함수
+        function drawBoundingBoxes(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.box;
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+
+                // 객체 레이블을 박스 위에 출력
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'red';
+                ctx.fillText(prediction.className, x, y > 10 ? y - 5 : 10);
+            });
+        }
+
+        // 객체 탐지 및 소리 재생을 위한 함수
+        async function detectObjects(frame) {
+            // ONNX.js에서 처리할 수 있도록 텐서로 변환
+            const inputTensor = new onnx.Tensor(new Float32Array(frame.data), 'float32', [1, 3, frame.height, frame.width]);
+
+            // 모델 추론
+            const output = await session.run([inputTensor]);
+
+            // 추론 결과에서 탐지된 객체들
+            const boxes = output.values().next().value.data;
+
+            // 탐지된 객체를 화면에 그리기
+            const predictions = parsePredictions(boxes);
+            drawBoundingBoxes(predictions);
+
+            // '담배'가 탐지되었는지 확인하여 소리 재생
+            const cigaretteDetected = predictions.some(pred => pred.className === 'cigarette');
+            if (cigaretteDetected) {
+                document.getElementById('alertSound').play();
+            }
+        }
+
+        // 추론 결과 파싱 (YOLOv8 모델의 출력 형식에 따라 다를 수 있음)
+        function parsePredictions(boxes) {
+            const predictions = [];
+            for (let i = 0; i < boxes.length; i += 6) {
+                const classId = boxes[i + 5];  // 클래스 ID (YOLOv8)
+                const confidence = boxes[i + 4];  // 탐지 확신도
+
+                if (confidence > 0.5) {  // 확신도가 50% 이상일 경우에만
+                    const box = boxes.slice(i, i + 4);  // [x, y, width, height]
+                    const className = getClassName(classId);
+                    predictions.push({ box, className });
+                }
+            }
+            return predictions;
+        }
+
+        // 클래스 ID에 해당하는 클래스 이름을 반환
+        function getClassName(classId) {
+            const classNames = ['cigarette', 'other_class'];  // 모델 학습 시 설정한 클래스 목록
+            return classNames[classId] || 'Unknown';
+        }
+
+        // 비디오 프레임 처리 및 탐지 실행
+        function processFrame() {
+            const video = document.getElementById('videoElement');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            const context = video.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // 실시간 객체 탐지
+            detectObjects(context.getImageData(0, 0, canvas.width, canvas.height));
+
+            // 비디오 프레임을 계속해서 처리하도록 설정
+            requestAnimationFrame(processFrame);
+        }
+
+        // 초기 설정
+        async function start() {
+            await loadModel();
+            await setupWebcam();
+            processFrame();
+        }
+
+        start();  // 실행
+    </script>
+</body>
+</html>
