@@ -1,3 +1,6 @@
+https://velog.io/@hwkims/%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8-%EB%8B%B4%EB%B0%B0%EA%BD%81%EC%B4%88
+https://www.youtube.com/watch?v=9ECnFEY9Sg0
+
 # ciga
 Cigarette Detection yolo
 
