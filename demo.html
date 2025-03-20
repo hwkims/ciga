@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚬 스마트 금연 도우미 🚭</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #e0f7fa; /* Light Teal Background */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start; /* Align items to the top */
+            min-height: 100vh; /* Ensure full viewport height */
+        }
+
+        h1 {
+            text-align: center;
+            color: #263238; /* Dark Blue Gray */
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        #container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border: 2px solid #b2ebf2; /* Light Teal Border */
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* Subtle shadow */
+            border-radius: 8px;
+            overflow: hidden; /* Clip canvas overflow */
+        }
+
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #log-container { /* Container for log and sound control */
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start; /* Align items to the top within the container */
+            width: 640px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        #log {
+            padding: 15px;
+            width: 480px; /* Adjusted width for log */
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #37474f; /* Dark Gray for Log */
+            color: #eceff1; /* Light Gray for Log Text */
+            font-family: monospace;
+            border-radius: 8px;
+            border: 1px solid #546e7a; /* Medium Gray Border */
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        #sound-control { /* Sound control area */
+            width: 140px; /* Adjusted width for sound control */
+            padding: 15px;
+            background-color: #fff;
+            border: 1px solid #b2ebf2;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        #sound-control button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #00bcd4; /* Teal Button */
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+
+        #sound-control button:hover {
+            background-color: #00acc1; /* Darker Teal on Hover */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            body {
+                padding: 20px;
+            }
+            #container, #log-container, #log {
+                width: 95%; /* Make container and log responsive */
+                max-width: 640px; /* Limit max width */
+            }
+            #log-container {
+                flex-direction: column; /* Stack log and sound control on smaller screens */
+                align-items: stretch; /* Stretch items to full width */
+            }
+            #log, #sound-control {
+                width: 100%; /* Full width for log and sound control */
+                margin-bottom: 10px; /* Add spacing between stacked items */
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🚬 스마트 금연 도우미 🚭</h1>
+    <div id="container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+    <div id="log-container">
+        <div id="log"></div>
+        <div id="sound-control">
+            <button id="toggleSound">소리 알림 켜기/끄기</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+    <script>
+        // --- 전역 변수 ---
+        let alertSound = new Audio('alert_sound.mp3'); // 알림 소리 파일 경로
+        let isPlaying = false;
+        let soundEnabled = true; // 소리 알림 활성화 상태
+
+        // --- HTML 요소 ---
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const logElement = document.getElementById('log');
+        const toggleSoundButton = document.getElementById('toggleSound');
+
+        // --- 이벤트 리스너 ---
+        toggleSoundButton.addEventListener('click', toggleSoundAlert);
+
+        // --- 함수 ---
+
+        // 소리 알림 토글 함수
+        function toggleSoundAlert() {
+            soundEnabled = !soundEnabled;
+            toggleSoundButton.textContent = soundEnabled ? '소리 알림 끄기' : '소리 알림 켜기';
+            if (!soundEnabled && isPlaying) {
+                stopSound(); // 소리 끄기
+            }
+            logMessage(soundEnabled ? "소리 알림 켜짐" : "소리 알림 꺼짐");
+        }
+
+        // 웹캠 초기화
+        function initWebcam() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((stream) => {
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch((error) => {
+                    console.error('웹캠 접근 오류:', error);
+                    logMessage('웹캠 접근 오류: ' + error);
+                });
+        }
+
+        // 모델 로드
+        let session;
+        async function loadModel() {
+            try {
+                session = await ort.InferenceSession.create('yolov8_model.onnx');
+                console.log("모델 로드 완료");
+                logMessage("모델 로드 완료");
+                startDetection();
+            } catch (err) {
+                console.error("모델 로드 실패:", err);
+                logMessage("모델 로드 실패: " + err);
+            }
+        }
+
+        // 객체 탐지 시작
+        async function startDetection() {
+            async function detectObjects() {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                let frame = canvas;
+
+                // 이미지 전처리 및 텐서 변환
+                let tensor = preprocessImage(frame);
+
+                // 추론 실행
+                try {
+                    const feeds = {'images': tensor}; // Yolov8 모델 입력 이름 'images' 로 가정 (일반적인 이름)
+                    const outputData = await session.run(feeds);
+
+                    // --- 출력 처리 ---
+                    const output = outputData['output0']; // Yolov8 모델 출력 이름 'output0' 로 가정 (일반적인 이름)
+                    if (!output || !output.data) {
+                        console.warn("모델 출력이 없습니다.");
+                        requestAnimationFrame(detectObjects);
+                        return;
+                    }
+
+                    const detections = output.data; // outputs are flattened arrays
+                    const numDetections = output.dims[1]; // Number of detections
+                    const boxes = [];
+                    const scores = [];
+                    const classIds = [];
+
+                    // YOLOv8 출력 파싱 (일반적인 출력 형태 가정)
+                    for (let i = 0; i < numDetections; ++i) {
+                        const offset = i * 84; // Assuming 84 elements per detection (xywh, confidence, 80 classes)
+                        const confidence = detections[4 + offset]; // 5th element is confidence
+
+                        if (confidence > 0.5) { // 신뢰도 50% 이상 필터링
+                            const classScores = detections.slice(5 + offset, 85 + offset); // Class probabilities
+                            const classId = classScores.indexOf(Math.max(...classScores)); // Get class with highest probability
+
+                            if (classId === 1) { // 클래스 ID가 1이면 'cigarette' (클래스 ID 확인 필요!)
+                                const xCenter = detections[offset];
+                                const yCenter = detections[1 + offset];
+                                const width = detections[2 + offset];
+                                const height = detections[3 + offset];
+                                const x = (xCenter - width / 2) * canvas.width;   // Scale box to canvas size
+                                const y = (yCenter - height / 2) * canvas.height;
+                                const boxWidth = width * canvas.width;
+                                const boxHeight = height * canvas.height;
+
+                                boxes.push([x, y, boxWidth, boxHeight]);
+                                scores.push(confidence);
+                                classIds.push(classId);
+                            }
+                        }
+                    }
+
+                    // --- 'cigarette' 탐지 여부 및 알림 처리 ---
+                    let cigaretteDetected = classIds.includes(1); // 클래스 ID 1 이 'cigarette' 이라고 가정
+
+                    if (cigaretteDetected) {
+                        drawBoundingBoxes(boxes, scores, classIds); // 박스 그리기
+                        if (soundEnabled && !isPlaying) {
+                            playSound(); // 소리 재생
+                            logMessage("🚬 담배가 감지되었습니다! 🚭");
+                        }
+                    } else {
+                        clearCanvas(); // 캔버스 지우기 (탐지 안되면 박스 제거)
+                        if (isPlaying) {
+                            stopSound(); // 소리 정지
+                            logMessage("탐지 대기 중...");
+                        }
+                    }
+
+                } catch (error) {
+                    console.error("추론 오류:", error);
+                    logMessage("추론 오류: " + error);
+                } finally {
+                    requestAnimationFrame(detectObjects); // 다음 프레임에서 다시 탐지
+                }
+            }
+
+            detectObjects();
+        }
+
+        // 웹캠 이미지 전처리 및 텐서 변환
+        function preprocessImage(frame) {
+            // 모델 입력 사이즈에 맞춰 캔버스 크기 조정 (YOLOv8 일반적인 입력 사이즈 640x640)
+            canvas.width = 640;
+            canvas.height = 640;
+            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = new Float32Array(3 * canvas.width * canvas.height);
+            let index = 0;
+
+            // RGBA -> RGB 변환 및 정규화 (0~1)
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                data[index++] = imageData.data[i] / 255.0;     // Red
+                data[index++] = imageData.data[i + 1] / 255.0; // Green
+                data[index++] = imageData.data[i + 2] / 255.0; // Blue
+            }
+
+            // 모델 입력 형태에 맞게 텐서 생성 (NCHW, Float32)
+            const tensor = new ort.Tensor('float32', data, [1, 3, canvas.width, canvas.height]);
+            return tensor;
+        }
+
+
+        // 박스 그리기 (다수의 박스 처리)
+        function drawBoundingBoxes(boxes, scores, classIds) {
+            clearCanvas(); // 기존 박스 지우기
+            boxes.forEach((box, index) => {
+                const x = box[0];
+                const y = box[1];
+                const width = box[2];
+                const height = box[3];
+                const score = scores[index];
+                const classId = classIds[index];
+
+                ctx.beginPath();
+                ctx.rect(x, y, width, height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'red';
+                ctx.fillStyle = 'red';
+                ctx.stroke();
+
+                // 라벨 텍스트 (클래스 이름 및 신뢰도)
+                const className = getClassLabel(classId); // 클래스 ID로부터 이름 가져오기
+                const labelText = `${className} ${(score * 100).toFixed(0)}%`;
+                ctx.font = "14px Arial";
+                ctx.fillStyle = "red";
+                ctx.fillText(labelText, x, y - 5); // 박스 위에 텍스트 표시
+            });
+        }
+
+        // 캔버스 내용 지우기
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 클래스 ID로부터 클래스 이름 가져오기 (필요에 따라 수정)
+        function getClassLabel(classId) {
+            // YOLOv8 COCO classes index 1 is 'person'.  If your model trained differently, adjust this.
+            // This is just example, please adjust this based on your trained model's class index.
+            if (classId === 1) {
+                return 'Cigarette'; // 클래스 ID 1을 'Cigarette'으로 가정
+            } else {
+                return 'Unknown';
+            }
+        }
+
+
+        // 소리 재생
+        function playSound() {
+            alertSound.loop = true; // 반복 재생 설정
+            alertSound.play().then(() => {
+                isPlaying = true;
+            }).catch(error => {
+                console.error("소리 재생 오류:", error);
+                logMessage("소리 재생 오류: " + error);
+            });
+        }
+
+        // 소리 정지
+        function stopSound() {
+            alertSound.pause();
+            alertSound.currentTime = 0; // 재생 위치 처음으로
+            isPlaying = false;
+        }
+
+
+        // 로그 메시지 추가
+        function logMessage(message) {
+            const newLog = document.createElement('div');
+            newLog.textContent = message;
+            logElement.appendChild(newLog);
+            logElement.scrollTop = logElement.scrollHeight; // 자동 스크롤
+        }
+
+        // --- 초기화 ---
+        window.onload = function () {
+            logMessage("페이지 로드 완료. 모델 로딩 시작...");
+            initWebcam(); // 웹캠 초기화
+            if (typeof ort !== 'undefined') {
+                loadModel(); // ONNX Runtime 로드 후 모델 로드
+            } else {
+                console.error("onnxruntime-web 라이브러리 로드 실패");
+                logMessage("onnxruntime-web 라이브러리 로드 실패");
+            }
+        };
+    </script>
+</body>
+</html>
