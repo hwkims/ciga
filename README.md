@@ -2,6 +2,8 @@
 
 🔗 **[블로그 프로젝트 링크](https://velog.io/@hwkims/%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8-%EB%8B%B4%EB%B0%B0%EA%BD%81%EC%B4%88)** 🌐
 
+https://hwkims.github.io/ciga/demo.html
+
 
 # ciga
 Cigarette Detection yolo
