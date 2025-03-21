@@ -105,7 +105,7 @@
         async function loadModel() {
             try {
                 // session = await ort.InferenceSession.create('yolov8n.onnx');  // 모델 경로
-                session = await ort.InferenceSession.create('best.onnx');  // 모델 경로
+                session = await ort.InferenceSession.create('https://hwkims.github.io/ciga/yolov8_model.onnx');  // 모델 경로
                 logMessage("Model loaded successfully.");
                 startDetection();
             } catch (err) {
