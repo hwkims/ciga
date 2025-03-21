@@ -183,7 +183,7 @@
         // 🧠 모델 로드
         async function loadModel() {
             try {
-                session = await ort.InferenceSession.create('best.onnx'); // 🚀 모델 파일 경로 (반드시 실제 경로로!)
+                session = await ort.InferenceSession.create('https://hwkims.github.io/ciga/yolov8_model.onnx'); // 🚀 모델 파일 경로 (반드시 실제 경로로!)
                 logMessage("🧠 모델 로드 완료.");
                 startDetection(); // 모델 로드 후 탐지 시작
             } catch (err) {
