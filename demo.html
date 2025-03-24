@@ -5,44 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🚬 스마트 금연 도우미 🚭</title>
     <style>
-        /* (스타일은 이전과 동일하게 유지) */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #e0f7fa; /* Light Teal Background */
+            background-color: #e0f7fa;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start; /* Align items to the top */
-            min-height: 100vh; /* Ensure full viewport height */
+            justify-content: flex-start;
+            min-height: 100vh;
         }
-
         h1 {
             text-align: center;
-            color: #263238; /* Dark Blue Gray */
+            color: #263238;
             margin-top: 20px;
             margin-bottom: 20px;
         }
-
         #container {
             position: relative;
             width: 640px;
             height: 480px;
-            border: 2px solid #b2ebf2; /* Light Teal Border */
+            border: 2px solid #b2ebf2;
             background-color: #fff;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* Subtle shadow */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             border-radius: 8px;
-            overflow: hidden; /* Clip canvas overflow */
+            overflow: hidden;
         }
-
         #webcam {
             width: 100%;
             height: 100%;
             object-fit: cover;
             position: absolute;
         }
-
         #canvas {
             position: absolute;
             top: 0;
@@ -50,33 +45,30 @@
             z-index: 10;
             pointer-events: none;
         }
-
-        #log-container { /* Container for log and sound control */
+        #log-container {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start; /* Align items to the top within the container */
+            align-items: flex-start;
             width: 640px;
             margin-top: 20px;
             margin-bottom: 20px;
         }
-
         #log {
             padding: 15px;
-            width: 480px; /* Adjusted width for log */
+            width: 480px;
             max-height: 200px;
             overflow-y: auto;
-            background-color: #37474f; /* Dark Gray for Log */
-            color: #eceff1; /* Light Gray for Log Text */
+            background-color: #37474f;
+            color: #eceff1;
             font-family: monospace;
             border-radius: 8px;
-            border: 1px solid #546e7a; /* Medium Gray Border */
+            border: 1px solid #546e7a;
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
             font-size: 14px;
             line-height: 1.4;
         }
-
-        #sound-control { /* Sound control area */
-            width: 140px; /* Adjusted width for sound control */
+        #sound-control {
+            width: 140px;
             padding: 15px;
             background-color: #fff;
             border: 1px solid #b2ebf2;
@@ -84,38 +76,34 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             text-align: center;
         }
-
         #sound-control button {
             padding: 8px 15px;
             border: none;
             border-radius: 5px;
-            background-color: #00bcd4; /* Teal Button */
+            background-color: #00bcd4;
             color: white;
             cursor: pointer;
             font-size: 14px;
             transition: background-color 0.3s ease;
         }
-
         #sound-control button:hover {
-            background-color: #00acc1; /* Darker Teal on Hover */
+            background-color: #00acc1;
         }
-
-        /* Responsive adjustments */
         @media (max-width: 768px) {
             body {
                 padding: 20px;
             }
             #container, #log-container, #log {
-                width: 95%; /* Make container and log responsive */
-                max-width: 640px; /* Limit max width */
+                width: 95%;
+                max-width: 640px;
             }
             #log-container {
-                flex-direction: column; /* Stack log and sound control on smaller screens */
-                align-items: stretch; /* Stretch items to full width */
+                flex-direction: column;
+                align-items: stretch;
             }
             #log, #sound-control {
-                width: 100%; /* Full width for log and sound control */
-                margin-bottom: 10px; /* Add spacing between stacked items */
+                width: 100%;
+                margin-bottom: 10px;
             }
         }
     </style>
@@ -129,19 +117,18 @@
     <div id="log-container">
         <div id="log"></div>
         <div id="sound-control">
-            <button id="toggleSound">소리 알림 켜기/끄기</button>
+            <button id="toggleSound">소리 알림 끄기</button>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script>
     <script>
         // --- 전역 변수 ---
-        let alertSound = new Audio('alert_sound.mp3'); // 🚨 알림 소리 파일 경로 (반드시 실제 파일 경로로!)
+        const alertSound = new Audio('https://hwkims.github.io/ciga/alert_sound.mp3');
         let isPlaying = false;
-        let soundEnabled = true; // 🔊 소리 알림 활성화 상태
+        let soundEnabled = true;
         let session;
-        const cigaretteClassId = 0; // 🚬 'cigarette' 클래스 ID (모델 훈련 시 사용한 레이블 ID로 변경!)
-
+        const cigaretteClassId = 0; // 모델에 따라 수정 필요
 
         // --- HTML 요소 ---
         const video = document.getElementById('webcam');
@@ -155,7 +142,6 @@
 
         // --- 함수 ---
 
-        // 🔈 소리 알림 토글
         function toggleSoundAlert() {
             soundEnabled = !soundEnabled;
             toggleSoundButton.textContent = soundEnabled ? '소리 알림 끄기' : '소리 알림 켜기';
@@ -165,206 +151,142 @@
             logMessage(soundEnabled ? "🔊 소리 알림 켜짐" : "🔇 소리 알림 꺼짐");
         }
 
-        // 📹 웹캠 초기화
         async function initWebcam() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
                 video.srcObject = stream;
-                video.onloadedmetadata = () => {
-                    video.play();
-                    logMessage("📹 웹캠 준비 완료.");
-                };
+                await video.play();
+                logMessage("📹 웹캠 준비 완료.");
             } catch (error) {
                 console.error('웹캠 접근 오류:', error);
-                logMessage(`❌ 웹캠 접근 오류: ${error}`);
+                logMessage(`❌ 웹캠 접근 오류: ${error.message}`);
             }
         }
 
-        // 🧠 모델 로드
         async function loadModel() {
             try {
-                session = await ort.InferenceSession.create('https://hwkims.github.io/ciga/yolov8_model.onnx'); // 🚀 모델 파일 경로 (반드시 실제 경로로!)
+                session = await ort.InferenceSession.create(
+                    'https://hwkims.github.io/ciga/yolov8_model.onnx',
+                    { executionProviders: ['webgl'] }
+                );
                 logMessage("🧠 모델 로드 완료.");
-                startDetection(); // 모델 로드 후 탐지 시작
+                startDetection();
             } catch (err) {
                 console.error("모델 로드 실패:", err);
-                logMessage(`❌ 모델 로드 실패: ${err}`);
+                logMessage(`❌ 모델 로드 실패: ${err.message}`);
             }
         }
 
-
-        // 🖼️ 이미지 전처리 (YOLOv8 입력 형식에 맞게)
-       function preprocessImage(img) {
-            const canvas = document.createElement('canvas'); // 임시 캔버스
-            canvas.width = 640;
-            canvas.height = 640;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, 640, 640); // 640x640으로 리사이징
-            const imageData = ctx.getImageData(0, 0, 640, 640);
+        function preprocessImage(img) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 640;
+            tempCanvas.height = 640;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(img, 0, 0, 640, 640);
+            const imageData = tempCtx.getImageData(0, 0, 640, 640);
             const data = imageData.data;
 
-            // RGB 데이터를 [1, 3, 640, 640] 형태의 Float32Array로 변환
             const inputData = new Float32Array(3 * 640 * 640);
-            for (let y = 0; y < 640; y++) {
-                for (let x = 0; x < 640; x++) {
-                    const offset = (y * 640 + x) * 4;
-                    // (R, G, B) -> (0, 1, 2)
-                    inputData[y * 640 + x] = data[offset] / 255;         // R
-                    inputData[640 * 640 + y * 640 + x] = data[offset + 1] / 255; // G
-                    inputData[2 * 640 * 640 + y * 640 + x] = data[offset + 2] / 255; // B
-                }
+            for (let i = 0; i < data.length; i += 4) {
+                const idx = i / 4;
+                inputData[idx] = data[i] / 255;                  // R
+                inputData[640 * 640 + idx] = data[i + 1] / 255; // G
+                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255; // B
             }
-
             return new ort.Tensor('float32', inputData, [1, 3, 640, 640]);
         }
 
-
-        // 🎯 객체 탐지 시작
         async function startDetection() {
             if (!session) {
-                console.error("세션이 초기화되지 않았습니다.");
                 logMessage("❌ 세션이 초기화되지 않았습니다.");
                 return;
             }
 
             async function detectFrame() {
-                // 1. 전처리
-                const tensor = preprocessImage(video);
-                const feeds = { 'images': tensor };  // 🖼️ 모델 입력 이름 (모델에 따라 다름!)
-
-                // 2. 추론 실행
                 try {
+                    const tensor = preprocessImage(video);
+                    const feeds = { [session.inputNames[0]]: tensor }; // 동적 입력 이름 사용
+
                     const results = await session.run(feeds);
-
-                    // 3. 후처리 및 결과 시각화
-                    postprocessAndDraw(results, video.videoWidth, video.videoHeight); // ✨
-
+                    postprocessAndDraw(results, 640, 480); // 고정된 출력 크기 사용
                 } catch (error) {
-                    console.error("추론 오류:", error);
-                    logMessage(`❌ 추론 오류: ${error}`);
+                    logMessage(`❌ 추론 오류: ${error.message}`);
                 }
-
-                // 다음 프레임 처리
                 requestAnimationFrame(detectFrame);
             }
-
-            detectFrame(); // 첫 번째 프레임 처리 시작
+            detectFrame();
         }
 
-        // 🔄 xywh를 xyxy로 변환
         function xywh2xyxy(x, y, w, h) {
             return [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
         }
 
-        // 🧹 NMS (Non-Maximum Suppression)
         function nonMaxSuppression(boxes, scores, iouThreshold) {
-            // 1. boxes와 scores를 결합하고, scores 내림차순 정렬
             const candidates = boxes.map((box, i) => [...box, scores[i]]).sort((a, b) => b[4] - a[4]);
             const keep = [];
 
             while (candidates.length > 0) {
-                const current = candidates.shift(); // 가장 높은 score
+                const current = candidates.shift();
                 keep.push(current);
 
-                // 2. IoU 계산 및 임계값 이하 제거
                 for (let i = candidates.length - 1; i >= 0; i--) {
-                    const box = candidates[i];
-                    const [x1, y1, x2, y2] = current;
-                    const [x1b, y1b, x2b, y2b] = box;
-
-                    // 교집합 영역 계산
-                    const xx1 = Math.max(x1, x1b);
-                    const yy1 = Math.max(y1, y1b);
-                    const xx2 = Math.min(x2, x2b);
-                    const yy2 = Math.min(y2, y2b);
-                    const w = Math.max(0, xx2 - xx1);
-                    const h = Math.max(0, yy2 - yy1);
-                    const intersection = w * h;
-
-                    // 합집합 영역 계산
-                    const area1 = (x2 - x1) * (y2 - y1);
-                    const area2 = (x2b - x1b) * (y2b - y1b);
-                    const union = area1 + area2 - intersection;
-
-                    const iou = intersection / union;
+                    const iou = calculateIoU(current, candidates[i]);
                     if (iou > iouThreshold) {
-                        candidates.splice(i, 1); // IoU가 임계값보다 크면 제거
+                        candidates.splice(i, 1);
                     }
                 }
             }
-            return keep; // 최종 boxes 반환
+            return keep;
         }
 
+        function calculateIoU(box1, box2) {
+            const [x1, y1, x2, y2] = box1;
+            const [x1b, y1b, x2b, y2b] = box2;
+            const xx1 = Math.max(x1, x1b);
+            const yy1 = Math.max(y1, y1b);
+            const xx2 = Math.min(x2, x2b);
+            const yy2 = Math.min(y2, y2b);
+            const w = Math.max(0, xx2 - xx1);
+            const h = Math.max(0, yy2 - yy1);
+            const intersection = w * h;
+            const union = (x2 - x1) * (y2 - y1) + (x2b - x1b) * (y2b - y1b) - intersection;
+            return intersection / union;
+        }
 
-        // 📊 결과 후처리, NMS, 및 그리기
-        function postprocessAndDraw(output, originalWidth, originalHeight) {
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // 캔버스 초기화
-
+        function postprocessAndDraw(output, width, height) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             let cigaretteDetected = false;
 
-            // 🔍 모델 출력 확인 (Netron 등으로 확인)
-            // console.log(output);
-            const outputName = session.outputNames[0]; // 첫 번째 출력 이름
-            const outputData = output[outputName].data;
-            const rows = output[outputName].dims[1];
-            const cols = output[outputName].dims[2];
-            //console.log(output[outputName].dims)
+            const outputData = output[session.outputNames[0]].data;
+            const [_, rows, cols] = output[session.outputNames[0]].dims;
+
             const boxes = [];
             const scores = [];
-            const classIds = [];
 
-            // YOLOv8 출력 파싱 (일반적인 경우)
             for (let i = 0; i < rows; i++) {
                 const offset = i * cols;
-                const confidence = outputData[offset + 4]; // 신뢰도
-
-                if (confidence > 0.5) { // 🔍 신뢰도 필터링
-                    let maxClassScore = 0;
-                    let classId = -1;
-
-                    // 클래스 확률 중 가장 높은 값과 인덱스 찾기
-                    for (let j = 5; j < cols; j++) {
-                        const score = outputData[offset + j];
-                        if (score > maxClassScore) {
-                            maxClassScore = score;
-                            classId = j - 5; // 클래스 ID 계산
-                        }
-                    }
-                    //console.log(classId)
-                    // 🚬 담배 클래스 ID 확인
+                const confidence = outputData[offset + 4];
+                if (confidence > 0.5) {
+                    const classId = Math.argmax(outputData.slice(offset + 5, offset + cols));
                     if (classId === cigaretteClassId) {
-                        const x = outputData[offset + 0]; // x
-                        const y = outputData[offset + 1]; // y
-                        const w = outputData[offset + 2]; // width
-                        const h = outputData[offset + 3]; // height
-
-                        const [x1, y1, x2, y2] = xywh2xyxy(x, y, w, h); // xywh -> xyxy
-
-                        // 스케일링 (정규화 해제)
-                        boxes.push([
-                            x1 * originalWidth,
-                            y1 * originalHeight,
-                            x2 * originalWidth,
-                            y2 * originalHeight,
-                        ]);
+                        const x = outputData[offset];
+                        const y = outputData[offset + 1];
+                        const w = outputData[offset + 2];
+                        const h = outputData[offset + 3];
+                        boxes.push(xywh2xyxy(x, y, w, h).map(v => v * width));
                         scores.push(confidence);
-                        classIds.push(classId);
                     }
                 }
             }
 
-            // ✨ NMS 적용
-            const nmsResult = nonMaxSuppression(boxes, scores, 0.45); // IoU 임계값 0.45
-
-            nmsResult.forEach(result => {
-                const [x1, y1, x2, y2, score] = result;
-                const label = "🚬 담배"; // 클래스 이름
-                drawBoundingBox(x1, y1, x2 - x1, y2 - y1, score, label); // 바운딩 박스 그리기
+            const nmsResult = nonMaxSuppression(boxes, scores, 0.45);
+            nmsResult.forEach(([x1, y1, x2, y2, score]) => {
+                drawBoundingBox(x1, y1, x2 - x1, y2 - y1, score, "🚬 담배");
                 cigaretteDetected = true;
             });
 
-            // 🔊 소리 알림 처리
             if (cigaretteDetected && !isPlaying && soundEnabled) {
                 playSound();
                 logMessage("🚬 담배 감지! 🚭 경고!");
@@ -374,60 +296,49 @@
             }
         }
 
-
-        // 🎨 바운딩 박스 그리기
         function drawBoundingBox(x, y, width, height, confidence, label) {
             ctx.beginPath();
             ctx.rect(x, y, width, height);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = 'red'; // 🟥 빨간색 테두리
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; //  হালকা 빨간색 채우기 (투명도 0.2)
+            ctx.strokeStyle = 'red';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
             ctx.stroke();
             ctx.fill();
 
-
             ctx.font = '16px Arial';
-            ctx.fillStyle = 'red'; // 🟥 빨간색 텍스트
-            ctx.fillText(`${label} ${confidence.toFixed(2)}`, x, y - 5); // 텍스트 위치 조정
+            ctx.fillStyle = 'red';
+            ctx.fillText(`${label} ${confidence.toFixed(2)}`, x, y > 10 ? y - 5 : y + 15);
         }
 
-
-        // 🔊 소리 재생
         function playSound() {
+            alertSound.loop = true;
             alertSound.play().then(() => {
                 isPlaying = true;
-              }).catch(error => {
-                console.error("소리 재생 오류:", error);
-                logMessage(`❌ 소리 재생 오류: ${error}`);
-                isPlaying = false; // 에러 발생 시 isPlaying을 false로
+            }).catch(error => {
+                logMessage(`❌ 소리 재생 오류: ${error.message}`);
             });
-            alertSound.loop = true;
-
         }
 
-        // 🔇 소리 정지
         function stopSound() {
             alertSound.pause();
-            alertSound.currentTime = 0; // 🔄 재생 위치 초기화
+            alertSound.currentTime = 0;
             isPlaying = false;
         }
 
-        // 📝 로그 메시지
         function logMessage(message) {
             const newLog = document.createElement('div');
-            newLog.textContent = message;
+            newLog.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             logElement.appendChild(newLog);
-            logElement.scrollTop = logElement.scrollHeight; // 📜 자동 스크롤
+            logElement.scrollTop = logElement.scrollHeight;
         }
 
-        // --- 페이지 로드 시 실행 ---
-        window.onload = () => {
+        // --- 초기화 ---
+        window.onload = async () => {
             logMessage("🚀 페이지 로드 완료. 초기화 시작...");
-            initWebcam();
+            await initWebcam();
             if (typeof ort !== 'undefined') {
-                loadModel();
+                await loadModel();
             } else {
-                console.error("onnxruntime-web 라이브러리 로드 실패");
                 logMessage("❌ onnxruntime-web 라이브러리 로드 실패");
             }
         };
