@@ -3,25 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YOLOv8 Cigarette Detection</title>
+    <title>🚬 스마트 금연 도우미 🚭</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #f4f4f9;
+            background-color: #e0f7fa;
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100vh;
+            justify-content: flex-start;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #263238;
+            margin-top: 20px;
+            margin-bottom: 20px;
         }
         #container {
             position: relative;
             width: 640px;
             height: 480px;
-            border: 2px solid #ccc;
+            border: 2px solid #b2ebf2;
             background-color: #fff;
-            margin-bottom: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
         }
         #webcam {
             width: 100%;
@@ -36,50 +45,110 @@
             z-index: 10;
             pointer-events: none;
         }
-        #log {
-            padding: 10px;
+        #log-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             width: 640px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        #log {
+            padding: 15px;
+            width: 480px;
             max-height: 200px;
             overflow-y: auto;
-            background-color: #222;
-            color: #fff;
+            background-color: #37474f;
+            color: #eceff1;
             font-family: monospace;
-            border-radius: 5px;
-            border: 2px solid #333;
+            border-radius: 8px;
+            border: 1px solid #546e7a;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            font-size: 14px;
+            line-height: 1.4;
         }
-        h1 {
+        #sound-control {
+            width: 140px;
+            padding: 15px;
+            background-color: #fff;
+            border: 1px solid #b2ebf2;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             text-align: center;
-            color: #333;
-            margin-bottom: 20px;
+        }
+        #sound-control button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #00bcd4;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+        #sound-control button:hover {
+            background-color: #00acc1;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 20px;
+            }
+            #container, #log-container, #log {
+                width: 95%;
+                max-width: 640px;
+            }
+            #log-container {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            #log, #sound-control {
+                width: 100%;
+                margin-bottom: 10px;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>YOLOv8 Cigarette Detection</h1>
+    <h1>🚬 스마트 금연 도우미 🚭</h1>
     <div id="container">
-        <video id="webcam" autoplay muted playsinline></video>
+        <video id="webcam" autoplay playsinline></video>
         <canvas id="canvas" width="640" height="480"></canvas>
     </div>
-    <div id="log"></div>
+    <div id="log-container">
+        <div id="log"></div>
+        <div id="sound-control">
+            <button id="toggleSound">소리 알림 끄기</button>
+        </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script>
     <script>
+        // --- 전역 변수 ---
+        const alertSound = new Audio('https://hwkims.github.io/ciga/alert_sound.mp3');
+        let isPlaying = false;
+        let soundEnabled = true;
+        let session;
+        const cigaretteClassId = 0;
+
+        // --- HTML 요소 ---
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const logElement = document.getElementById('log');
-        
-        // GitHub Pages에서 제공되는 소리 파일 경로
-        const alertSound = new Audio('https://hwkims.github.io/ciga/alert_sound.mp3');
-        let isPlaying = false;
-        let session;
-        const cigaretteClassId = 0; // 모델에 따라 확인 필요
+        const toggleSoundButton = document.getElementById('toggleSound');
 
-        function logMessage(message) {
-            const newLog = document.createElement('div');
-            newLog.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            logElement.appendChild(newLog);
-            logElement.scrollTop = logElement.scrollHeight;
+        // --- 이벤트 리스너 ---
+        toggleSoundButton.addEventListener('click', toggleSoundAlert);
+
+        // --- 함수 ---
+
+        function toggleSoundAlert() {
+            soundEnabled = !soundEnabled;
+            toggleSoundButton.textContent = soundEnabled ? '소리 알림 끄기' : '소리 알림 켜기';
+            if (!soundEnabled && isPlaying) {
+                stopSound();
+            }
+            logMessage(soundEnabled ? "🔊 소리 알림 켜짐" : "🔇 소리 알림 꺼짐");
         }
 
         async function initWebcam() {
@@ -89,178 +158,198 @@
                 });
                 video.srcObject = stream;
                 await video.play();
-                logMessage("Webcam initialized successfully");
+                logMessage("📹 웹캠 준비 완료.");
             } catch (error) {
-                logMessage(`Webcam error: ${error.message}`);
+                logMessage(`❌ 웹캠 접근 오류: ${error.message}`);
                 throw error;
             }
         }
 
         async function loadModel() {
             try {
+                // WebGL 대신 기본 실행 제공자 사용 시도
                 session = await ort.InferenceSession.create(
                     'https://hwkims.github.io/ciga/yolov8_model.onnx',
-                    { executionProviders: ['webgl'] }
+                    { executionProviders: ['wasm'] } // WebGL 대신 WASM 사용
                 );
-                logMessage("Model loaded successfully");
-                return true;
-            } catch (error) {
-                logMessage(`Model loading error: ${error.message}`);
-                throw error;
+                logMessage("🧠 모델 로드 완료.");
+                logMessage(`입력 이름: ${session.inputNames}`);
+                logMessage(`출력 이름: ${session.outputNames}`);
+                startDetection();
+            } catch (err) {
+                logMessage(`❌ 모델 로드 실패: ${err.message}`);
+                throw err;
             }
         }
 
         function preprocessImage(img) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 640;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, 640, 640);
-            const imageData = ctx.getImageData(0, 0, 640, 640);
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 640;
+            tempCanvas.height = 640;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(img, 0, 0, 640, 640);
+            const imageData = tempCtx.getImageData(0, 0, 640, 640);
             const data = imageData.data;
 
             const inputData = new Float32Array(3 * 640 * 640);
             for (let i = 0; i < data.length; i += 4) {
                 const idx = i / 4;
-                inputData[idx] = data[i] / 255.0;           // R
-                inputData[640 * 640 + idx] = data[i + 1] / 255.0; // G
-                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255.0; // B
+                inputData[idx] = data[i] / 255;
+                inputData[640 * 640 + idx] = data[i + 1] / 255;
+                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255;
             }
             return new ort.Tensor('float32', inputData, [1, 3, 640, 640]);
         }
 
+        async function startDetection() {
+            if (!session) {
+                logMessage("❌ 세션이 초기화되지 않았습니다.");
+                return;
+            }
+
+            async function detectFrame() {
+                try {
+                    const tensor = preprocessImage(video);
+                    const feeds = { [session.inputNames[0]]: tensor };
+                    const results = await session.run(feeds);
+                    postprocessAndDraw(results, 640, 480);
+                } catch (error) {
+                    logMessage(`❌ 추론 오류: ${error.message}`);
+                }
+                requestAnimationFrame(detectFrame);
+            }
+            detectFrame();
+        }
+
         function xywh2xyxy(x, y, w, h) {
-            return [
-                x - w / 2,
-                y - h / 2,
-                x + w / 2,
-                y + h / 2
-            ];
+            return [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
         }
 
         function nonMaxSuppression(boxes, scores, iouThreshold) {
-            const indices = Array.from({length: scores.length}, (_, i) => i);
-            indices.sort((a, b) => scores[b] - scores[a]);
-            
+            const candidates = boxes.map((box, i) => [...box, scores[i]]).sort((a, b) => b[4] - a[4]);
             const keep = [];
-            while (indices.length > 0) {
-                const current = indices.shift();
+
+            while (candidates.length > 0) {
+                const current = candidates.shift();
                 keep.push(current);
-                
-                for (let i = indices.length - 1; i >= 0; i--) {
-                    const iou = calculateIoU(boxes[current], boxes[indices[i]]);
+
+                for (let i = candidates.length - 1; i >= 0; i--) {
+                    const iou = calculateIoU(current, candidates[i]);
                     if (iou > iouThreshold) {
-                        indices.splice(i, 1);
+                        candidates.splice(i, 1);
                     }
                 }
             }
-            
-            return keep.map(i => ({
-                box: boxes[i],
-                score: scores[i]
-            }));
+            return keep;
         }
 
         function calculateIoU(box1, box2) {
             const [x1, y1, x2, y2] = box1;
             const [x1b, y1b, x2b, y2b] = box2;
-            const xi1 = Math.max(x1, x1b);
-            const yi1 = Math.max(y1, y1b);
-            const xi2 = Math.min(x2, x2b);
-            const yi2 = Math.min(y2, y2b);
-            const interArea = Math.max(0, xi2 - xi1) * Math.max(0, yi2 - yi1);
-            const box1Area = (x2 - x1) * (y2 - y1);
-            const box2Area = (x2b - x1b) * (y2b - y1b);
-            return interArea / (box1Area + box2Area - interArea);
+            const xx1 = Math.max(x1, x1b);
+            const yy1 = Math.max(y1, y1b);
+            const xx2 = Math.min(x2, x2b);
+            const yy2 = Math.min(y2, y2b);
+            const w = Math.max(0, xx2 - xx1);
+            const h = Math.max(0, yy2 - yy1);
+            const intersection = w * h;
+            const union = (x2 - x1) * (y2 - y1) + (x2b - x1b) * (y2b - y1b) - intersection;
+            return intersection / union;
         }
 
-        function processOutput(output) {
-            const data = output[Object.keys(output)[0]].data;
-            const [_, numDetections, numElements] = output[Object.keys(output)[0]].dims;
+        function postprocessAndDraw(output, width, height) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let cigaretteDetected = false;
+
+            const outputData = output[session.outputNames[0]].data;
+            const [_, rows, cols] = output[session.outputNames[0]].dims;
 
             const boxes = [];
             const scores = [];
 
-            for (let i = 0; i < numDetections; i++) {
-                const offset = i * numElements;
-                const confidence = data[offset + 4];
-                const classId = data[offset + 5]; // 클래스 ID 위치 확인 필요
-                
-                if (confidence > 0.5 && classId === cigaretteClassId) {
-                    const x = data[offset];
-                    const y = data[offset + 1];
-                    const w = data[offset + 2];
-                    const h = data[offset + 3];
-                    
-                    boxes.push(xywh2xyxy(x, y, w, h));
-                    scores.push(confidence);
+            for (let i = 0; i < rows; i++) {
+                const offset = i * cols;
+                const confidence = outputData[offset + 4];
+                if (confidence > 0.5) {
+                    const x = outputData[offset];
+                    const y = outputData[offset + 1];
+                    const w = outputData[offset + 2];
+                    const h = outputData[offset + 3];
+                    const classScores = outputData.slice(offset + 5, offset + cols);
+                    const classId = classScores.indexOf(Math.max(...classScores));
+
+                    if (classId === cigaretteClassId) {
+                        boxes.push(xywh2xyxy(x, y, w, h).map(v => v * width));
+                        scores.push(confidence);
+                    }
                 }
             }
 
-            return nonMaxSuppression(boxes, scores, 0.45);
+            const nmsResult = nonMaxSuppression(boxes, scores, 0.45);
+            nmsResult.forEach(([x1, y1, x2, y2, score]) => {
+                drawBoundingBox(x1, y1, x2 - x1, y2 - y1, score, "🚬 담배");
+                cigaretteDetected = true;
+            });
+
+            if (cigaretteDetected && !isPlaying && soundEnabled) {
+                playSound();
+                logMessage("🚬 담배 감지! 🚭 경고!");
+            } else if (!cigaretteDetected && isPlaying) {
+                stopSound();
+                logMessage("👀 감시 중...");
+            }
         }
 
-        function drawBoundingBox(x1, y1, x2, y2, score) {
-            const width = x2 - x1;
-            const height = y2 - y1;
-            
+        function drawBoundingBox(x, y, width, height, confidence, label) {
             ctx.beginPath();
-            ctx.rect(x1, y1, width, height);
+            ctx.rect(x, y, width, height);
             ctx.lineWidth = 2;
             ctx.strokeStyle = 'red';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
             ctx.stroke();
-            
+            ctx.fill();
+
             ctx.font = '16px Arial';
             ctx.fillStyle = 'red';
-            ctx.fillText(`Cigarette ${score.toFixed(2)}`, x1, y1 > 10 ? y1 - 5 : y1 + 15);
+            ctx.fillText(`${label} ${confidence.toFixed(2)}`, x, y > 10 ? y - 5 : y + 15);
         }
 
-        async function detectFrame() {
-            if (!session) return;
-
-            try {
-                const tensor = preprocessImage(video);
-                const feeds = { [session.inputNames[0]]: tensor };
-                const results = await session.run(feeds);
-                
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const detections = processOutput(results);
-                
-                let cigaretteDetected = false;
-                detections.forEach(({ box, score }) => {
-                    const [x1, y1, x2, y2] = box.map(coord => coord * 640);
-                    drawBoundingBox(x1, y1, x2, y2, score);
-                    cigaretteDetected = true;
-                });
-
-                if (cigaretteDetected && !isPlaying) {
-                    alertSound.play().catch(e => logMessage(`Audio error: ${e.message}`));
-                    isPlaying = true;
-                    logMessage("Cigarette detected! Playing alert");
-                } else if (!cigaretteDetected && isPlaying) {
-                    alertSound.pause();
-                    alertSound.currentTime = 0;
-                    isPlaying = false;
-                    logMessage("No cigarette detected. Alert stopped");
-                }
-            } catch (error) {
-                logMessage(`Detection error: ${error.message}`);
-            }
-
-            requestAnimationFrame(detectFrame);
+        function playSound() {
+            alertSound.loop = true;
+            alertSound.play().then(() => {
+                isPlaying = true;
+            }).catch(error => {
+                logMessage(`❌ 소리 재생 오류: ${error.message}`);
+            });
         }
 
-        async function init() {
+        function stopSound() {
+            alertSound.pause();
+            alertSound.currentTime = 0;
+            isPlaying = false;
+        }
+
+        function logMessage(message) {
+            const newLog = document.createElement('div');
+            newLog.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logElement.appendChild(newLog);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        // --- 초기화 ---
+        window.onload = async () => {
+            logMessage("🚀 페이지 로드 완료. 초기화 시작...");
             try {
                 await initWebcam();
-                await loadModel();
-                detectFrame();
+                if (typeof ort !== 'undefined') {
+                    await loadModel();
+                } else {
+                    logMessage("❌ onnxruntime-web 라이브러리 로드 실패");
+                }
             } catch (error) {
-                logMessage(`Initialization failed: ${error.message}`);
+                logMessage(`❌ 초기화 실패: ${error.message}`);
             }
-        }
-
-        window.onload = init;
+        };
     </script>
 </body>
 </html>
