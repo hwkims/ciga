@@ -128,7 +128,7 @@
         let isPlaying = false;
         let soundEnabled = true;
         let session;
-        const cigaretteClassId = 0; // 모델에 따라 수정 필요
+        const cigaretteClassId = 0;
 
         // --- HTML 요소 ---
         const video = document.getElementById('webcam');
@@ -148,7 +148,7 @@
             if (!soundEnabled && isPlaying) {
                 stopSound();
             }
-            logMessage(soundEnabled ? "🔊 소리 알림 켜짐" : "🔇 소리 알림 꺼짐");
+            logMessage SoundEnabled ? "🔊 소리 알림 켜짐" : "🔇 소리 알림 꺼짐");
         }
 
         async function initWebcam() {
@@ -160,8 +160,8 @@
                 await video.play();
                 logMessage("📹 웹캠 준비 완료.");
             } catch (error) {
-                console.error('웹캠 접근 오류:', error);
                 logMessage(`❌ 웹캠 접근 오류: ${error.message}`);
+                throw error;
             }
         }
 
@@ -169,13 +169,15 @@
             try {
                 session = await ort.InferenceSession.create(
                     'https://hwkims.github.io/ciga/yolov8_model.onnx',
-                    { executionProviders: ['webgl'] }
+                    { executionProviders: ['wasm'] }
                 );
                 logMessage("🧠 모델 로드 완료.");
+                logMessage(`입력 이름: ${session.inputNames}`);
+                logMessage(`출력 이름: ${session.outputNames}`);
                 startDetection();
             } catch (err) {
-                console.error("모델 로드 실패:", err);
                 logMessage(`❌ 모델 로드 실패: ${err.message}`);
+                throw err;
             }
         }
 
@@ -191,9 +193,9 @@
             const inputData = new Float32Array(3 * 640 * 640);
             for (let i = 0; i < data.length; i += 4) {
                 const idx = i / 4;
-                inputData[idx] = data[i] / 255;                  // R
-                inputData[640 * 640 + idx] = data[i + 1] / 255; // G
-                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255; // B
+                inputData[idx] = data[i] / 255;
+                inputData[640 * 640 + idx] = data[i + 1] / 255;
+                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255;
             }
             return new ort.Tensor('float32', inputData, [1, 3, 640, 640]);
         }
@@ -207,10 +209,9 @@
             async function detectFrame() {
                 try {
                     const tensor = preprocessImage(video);
-                    const feeds = { [session.inputNames[0]]: tensor }; // 동적 입력 이름 사용
-
+                    const feeds = { 'input.1': tensor }; // 명시적으로 'input.1' 사용
                     const results = await session.run(feeds);
-                    postprocessAndDraw(results, 640, 480); // 고정된 출력 크기 사용
+                    postprocessAndDraw(results, 640, 480);
                 } catch (error) {
                     logMessage(`❌ 추론 오류: ${error.message}`);
                 }
@@ -269,12 +270,14 @@
                 const offset = i * cols;
                 const confidence = outputData[offset + 4];
                 if (confidence > 0.5) {
-                    const classId = Math.argmax(outputData.slice(offset + 5, offset + cols));
+                    const x = outputData[offset];
+                    const y = outputData[offset + 1];
+                    const w = outputData[offset + 2];
+                    const h = outputData[offset + 3];
+                    const classScores = Array.from(outputData.slice(offset + 5, offset + cols));
+                    const classId = classScores.indexOf(Math.max(...classScores));
+
                     if (classId === cigaretteClassId) {
-                        const x = outputData[offset];
-                        const y = outputData[offset + 1];
-                        const w = outputData[offset + 2];
-                        const h = outputData[offset + 3];
                         boxes.push(xywh2xyxy(x, y, w, h).map(v => v * width));
                         scores.push(confidence);
                     }
@@ -335,11 +338,15 @@
         // --- 초기화 ---
         window.onload = async () => {
             logMessage("🚀 페이지 로드 완료. 초기화 시작...");
-            await initWebcam();
-            if (typeof ort !== 'undefined') {
-                await loadModel();
-            } else {
-                logMessage("❌ onnxruntime-web 라이브러리 로드 실패");
+            try {
+                await initWebcam();
+                if (typeof ort !== 'undefined') {
+                    await loadModel();
+                } else {
+                    logMessage("❌ onnxruntime-web 라이브러리 로드 실패");
+                }
+            } catch (error) {
+                logMessage(`❌ 초기화 실패: ${error.message}`);
             }
         };
     </script>
