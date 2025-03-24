@@ -15,7 +15,6 @@
             align-items: center;
             height: 100vh;
         }
-
         #container {
             position: relative;
             width: 640px;
@@ -24,14 +23,12 @@
             background-color: #fff;
             margin-bottom: 10px;
         }
-
         #webcam {
             width: 100%;
             height: 100%;
             object-fit: cover;
             position: absolute;
         }
-
         #canvas {
             position: absolute;
             top: 0;
@@ -39,7 +36,6 @@
             z-index: 10;
             pointer-events: none;
         }
-
         #log {
             padding: 10px;
             width: 640px;
@@ -51,7 +47,6 @@
             border-radius: 5px;
             border: 2px solid #333;
         }
-
         h1 {
             text-align: center;
             color: #333;
@@ -69,255 +64,203 @@
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script>
     <script>
-
-        let alertSound = new Audio('alert_sound.mp3');
-        let isPlaying = false;
-        let session;
-        // 'cigarette' 클래스 ID.  모델 훈련 시 사용한 레이블에 따라 변경해야 합니다.
-        const cigaretteClassId = 0;  // 예시.  반드시 실제 ID로 변경!
-
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const logElement = document.getElementById('log');
+        
+        // GitHub Pages에서 제공되는 소리 파일 경로
+        const alertSound = new Audio('https://hwkims.github.io/ciga/alert_sound.mp3');
+        let isPlaying = false;
+        let session;
+        const cigaretteClassId = 0; // 모델에 따라 확인 필요
 
         function logMessage(message) {
             const newLog = document.createElement('div');
-            newLog.textContent = message;
+            newLog.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             logElement.appendChild(newLog);
             logElement.scrollTop = logElement.scrollHeight;
         }
 
         async function initWebcam() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
                 video.srcObject = stream;
-                video.onloadedmetadata = () => {
-                    video.play();
-                    logMessage("Webcam initialized.");
-                };
+                await video.play();
+                logMessage("Webcam initialized successfully");
             } catch (error) {
-                console.error('Error accessing webcam:', error);
-                logMessage(`Error accessing webcam: ${error}`);
+                logMessage(`Webcam error: ${error.message}`);
+                throw error;
             }
         }
 
         async function loadModel() {
             try {
-                // session = await ort.InferenceSession.create('yolov8n.onnx');  // 모델 경로
-                session = await ort.InferenceSession.create('https://hwkims.github.io/ciga/yolov8_model.onnx');  // 모델 경로
-                logMessage("Model loaded successfully.");
-                startDetection();
-            } catch (err) {
-                console.error("Error loading model:", err);
-                logMessage(`Error loading model: ${err}`);
+                session = await ort.InferenceSession.create(
+                    'https://hwkims.github.io/ciga/yolov8_model.onnx',
+                    { executionProviders: ['webgl'] }
+                );
+                logMessage("Model loaded successfully");
+                return true;
+            } catch (error) {
+                logMessage(`Model loading error: ${error.message}`);
+                throw error;
             }
         }
 
-        // 이미지를 [1, 3, 640, 640] float32 텐서로 전처리
         function preprocessImage(img) {
-          const canvas = document.createElement('canvas');
-          canvas.width = 640;
-          canvas.height = 640;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, 640, 640);
-          const imageData = ctx.getImageData(0, 0, 640, 640);
-          const data = imageData.data;
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 640;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 640, 640);
+            const imageData = ctx.getImageData(0, 0, 640, 640);
+            const data = imageData.data;
 
-          const inputData = new Float32Array(3 * 640 * 640);
-          for (let y = 0; y < 640; y++) {
-            for (let x = 0; x < 640; x++) {
-              const offset = (y * 640 + x) * 4;
-              inputData[y * 640 + x] = data[offset] / 255; // R
-              inputData[640 * 640 + y * 640 + x] = data[offset + 1] / 255; // G
-              inputData[2 * 640 * 640 + y * 640 + x] = data[offset + 2] / 255; // B
+            const inputData = new Float32Array(3 * 640 * 640);
+            for (let i = 0; i < data.length; i += 4) {
+                const idx = i / 4;
+                inputData[idx] = data[i] / 255.0;           // R
+                inputData[640 * 640 + idx] = data[i + 1] / 255.0; // G
+                inputData[2 * 640 * 640 + idx] = data[i + 2] / 255.0; // B
             }
-          }
-          return new ort.Tensor('float32', inputData, [1, 3, 640, 640]);
+            return new ort.Tensor('float32', inputData, [1, 3, 640, 640]);
         }
 
-
-        // xywh를 xyxy로 변환
         function xywh2xyxy(x, y, w, h) {
-            const x1 = x - w / 2;
-            const y1 = y - h / 2;
-            const x2 = x + w / 2;
-            const y2 = y + h / 2;
-            return [x1, y1, x2, y2];
+            return [
+                x - w / 2,
+                y - h / 2,
+                x + w / 2,
+                y + h / 2
+            ];
         }
 
-        // NMS (Non-Maximum Suppression) 구현
         function nonMaxSuppression(boxes, scores, iouThreshold) {
-            // x1, y1, x2, y2, score로 구성된 배열로 변환
-            const boxesWithScores = boxes.map((box, i) => [...box, scores[i]]);
-
-            // score 내림차순 정렬
-            boxesWithScores.sort((a, b) => b[4] - a[4]);
-
+            const indices = Array.from({length: scores.length}, (_, i) => i);
+            indices.sort((a, b) => scores[b] - scores[a]);
+            
             const keep = [];
-            while (boxesWithScores.length > 0) {
-                const current = boxesWithScores.shift();
+            while (indices.length > 0) {
+                const current = indices.shift();
                 keep.push(current);
-
-                boxesWithScores.forEach((box, i) => {
-                    const [x1, y1, x2, y2] = current;
-                    const [x1b, y1b, x2b, y2b] = box;
-
-                    const xx1 = Math.max(x1, x1b);
-                    const yy1 = Math.max(y1, y1b);
-                    const xx2 = Math.min(x2, x2b);
-                    const yy2 = Math.min(y2, y2b);
-
-                    const w = Math.max(0, xx2 - xx1);
-                    const h = Math.max(0, yy2 - yy1);
-
-                    const intersection = w * h;
-                    const union = (x2 - x1) * (y2 - y1) + (x2b - x1b) * (y2b - y1b) - intersection;
-                    const iou = intersection / union;
-
+                
+                for (let i = indices.length - 1; i >= 0; i--) {
+                    const iou = calculateIoU(boxes[current], boxes[indices[i]]);
                     if (iou > iouThreshold) {
-                        boxesWithScores.splice(i, 1); // Remove box
+                        indices.splice(i, 1);
                     }
-                });
-            }
-
-            return keep;
-        }
-    // 결과 후처리, NMS, 및 그리기
-    function postprocessAndDraw(output, originalWidth, originalHeight) {
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
-
-        let cigaretteDetected = false;
-        const outputData = output.output0.data; // 또는 모델 출력에 따라 'predictions' 등
-        const rows = output.output0.dims[1];
-        const cols = output.output0.dims[2];
-
-          const boxes = [];
-          const scores = [];
-          const classIds = [];
-
-          for (let i = 0; i < rows; i++) {
-            const offset = i * cols;
-            const confidence = outputData[offset + 4];
-
-            if (confidence > 0.5) {
-              let maxClassScore = 0;
-              let classId = -1;
-              for (let j = 5; j < cols; j++) {
-                const score = outputData[offset + j];
-                if (score > maxClassScore) {
-                  maxClassScore = score;
-                  classId = j - 5;
                 }
-              }
-
-              if (classId === cigaretteClassId) {
-                  const x = outputData[offset];
-                  const y = outputData[offset + 1];
-                  const w = outputData[offset + 2];
-                  const h = outputData[offset + 3];
-
-                  const [x1, y1, x2, y2] = xywh2xyxy(x, y, w, h);
-                  boxes.push([
-                    x1 * originalWidth,
-                    y1 * originalHeight,
-                    x2 * originalWidth,
-                    y2 * originalHeight,
-                  ]);
-                  scores.push(confidence);
-                  classIds.push(classId)
-              }
             }
-          }
-
-          const nms_result = nonMaxSuppression(boxes, scores, 0.45); // NMS 적용
-
-          nms_result.forEach(result => {
-                const [x1, y1, x2, y2, score] = result;
-                const label = "Cigarette";
-                drawBoundingBox(x1, y1, x2 - x1, y2 - y1, score, label);
-                cigaretteDetected = true;
-          });
-
-
-
-        // 소리 재생 로직
-        if (cigaretteDetected && !isPlaying) {
-            alertSound.play();
-            isPlaying = true;
-            logMessage("Cigarette detected! Playing alert sound.");
-        } else if (!cigaretteDetected && isPlaying) {
-            alertSound.pause();
-            alertSound.currentTime = 0;
-            isPlaying = false;
-            logMessage("No cigarette detected. Stopping alert sound.");
+            
+            return keep.map(i => ({
+                box: boxes[i],
+                score: scores[i]
+            }));
         }
-    }
 
+        function calculateIoU(box1, box2) {
+            const [x1, y1, x2, y2] = box1;
+            const [x1b, y1b, x2b, y2b] = box2;
+            const xi1 = Math.max(x1, x1b);
+            const yi1 = Math.max(y1, y1b);
+            const xi2 = Math.min(x2, x2b);
+            const yi2 = Math.min(y2, y2b);
+            const interArea = Math.max(0, xi2 - xi1) * Math.max(0, yi2 - yi1);
+            const box1Area = (x2 - x1) * (y2 - y1);
+            const box2Area = (x2b - x1b) * (y2b - y1b);
+            return interArea / (box1Area + box2Area - interArea);
+        }
 
+        function processOutput(output) {
+            const data = output[Object.keys(output)[0]].data;
+            const [_, numDetections, numElements] = output[Object.keys(output)[0]].dims;
 
+            const boxes = [];
+            const scores = [];
 
-    function drawBoundingBox(x, y, width, height, confidence, label) {
-        ctx.beginPath();
-        ctx.rect(x, y, width, height);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'red';
-        ctx.fillStyle = 'red';
-        ctx.stroke();
+            for (let i = 0; i < numDetections; i++) {
+                const offset = i * numElements;
+                const confidence = data[offset + 4];
+                const classId = data[offset + 5]; // 클래스 ID 위치 확인 필요
+                
+                if (confidence > 0.5 && classId === cigaretteClassId) {
+                    const x = data[offset];
+                    const y = data[offset + 1];
+                    const w = data[offset + 2];
+                    const h = data[offset + 3];
+                    
+                    boxes.push(xywh2xyxy(x, y, w, h));
+                    scores.push(confidence);
+                }
+            }
 
-        ctx.font = '16px Arial';
-        ctx.fillStyle = 'red';
-        ctx.fillText(`${label} ${confidence.toFixed(2)}`, x, y - 5);
-    }
+            return nonMaxSuppression(boxes, scores, 0.45);
+        }
 
-
-
-    async function startDetection() {
-        if (!session) {
-            console.error("Session is not initialized.");
-            logMessage("Session is not initialized");
-            return;
+        function drawBoundingBox(x1, y1, x2, y2, score) {
+            const width = x2 - x1;
+            const height = y2 - y1;
+            
+            ctx.beginPath();
+            ctx.rect(x1, y1, width, height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'red';
+            ctx.stroke();
+            
+            ctx.font = '16px Arial';
+            ctx.fillStyle = 'red';
+            ctx.fillText(`Cigarette ${score.toFixed(2)}`, x1, y1 > 10 ? y1 - 5 : y1 + 15);
         }
 
         async function detectFrame() {
-            const tensor = preprocessImage(video);
-
-            // 모델 입력 이름 확인 (Netron 등으로 확인)
-            const inputName = session.inputNames[0]; // 첫 번째 입력 이름을 사용.
-            const feeds = { [inputName]: tensor };
+            if (!session) return;
 
             try {
+                const tensor = preprocessImage(video);
+                const feeds = { [session.inputNames[0]]: tensor };
                 const results = await session.run(feeds);
-                //  console.log(results) // 모델의 아웃풋 구조 확인
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const detections = processOutput(results);
+                
+                let cigaretteDetected = false;
+                detections.forEach(({ box, score }) => {
+                    const [x1, y1, x2, y2] = box.map(coord => coord * 640);
+                    drawBoundingBox(x1, y1, x2, y2, score);
+                    cigaretteDetected = true;
+                });
 
-                // 모델 출력 이름 확인 (Netron 등으로 확인)
-                const outputName = session.outputNames[0]; // 첫 번째 출력 이름을 사용.
-
-                postprocessAndDraw(results, video.videoWidth, video.videoHeight);
-
-
+                if (cigaretteDetected && !isPlaying) {
+                    alertSound.play().catch(e => logMessage(`Audio error: ${e.message}`));
+                    isPlaying = true;
+                    logMessage("Cigarette detected! Playing alert");
+                } else if (!cigaretteDetected && isPlaying) {
+                    alertSound.pause();
+                    alertSound.currentTime = 0;
+                    isPlaying = false;
+                    logMessage("No cigarette detected. Alert stopped");
+                }
             } catch (error) {
-                console.error("Inference error:", error);
-                logMessage(`Inference error: ${error}`);
+                logMessage(`Detection error: ${error.message}`);
             }
 
             requestAnimationFrame(detectFrame);
         }
 
-        detectFrame();
-    }
-
-    window.onload = () => {
-        initWebcam();
-        if (typeof ort !== 'undefined') {
-            loadModel();
-        } else {
-            console.error("onnxruntime-web is not loaded properly");
-            logMessage("onnxruntime-web is not loaded properly");
+        async function init() {
+            try {
+                await initWebcam();
+                await loadModel();
+                detectFrame();
+            } catch (error) {
+                logMessage(`Initialization failed: ${error.message}`);
+            }
         }
-    };
 
+        window.onload = init;
     </script>
 </body>
 </html>
