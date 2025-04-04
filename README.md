@@ -5,6 +5,7 @@
 https://hwkims.github.io/ciga/demo.html
 https://v0-ciga-h3ywai.vercel.app/
 
+https://v0-ciga-0b1jbg.vercel.app/
 
 # ciga
 Cigarette Detection yolo
